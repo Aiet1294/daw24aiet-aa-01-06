@@ -1,8 +1,7 @@
 //Dependentziak inportatu 
 import express from 'express';
 import dotenv from 'dotenv';
-import Openai from 'openai';
-import session from 'express-session'; // SE HA AÑADIDO: Importamos express-session para gestionar el historial del chat
+import OpenAI from 'openai';
 
 // API key-a kargatu
 dotenv.config();
@@ -21,67 +20,64 @@ app.use(express.json());
 // (a-www-form-encoded form datuak)
 app.use(express.urlencoded({ extended: true }));
 
-// SE HA AÑADIDO: Configuración de la sesión para mantener el historial del chat
-// Esto reemplaza la funcionalidad de $_SESSION['txataren_mezuak'] de PHP
-app.use(session({
-    secret: process.env.OPENAI_API_KEY, // Deberías cambiar esto por una variable de entorno en producción
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false } // secure: true behar da HTTPS erabiltzen bada
-}));
-
-//OpenAI bezeroaren instantzia sortu eta Api key-a pasatu
-const openai = new Openai({
+// OpenAI bezeroaren instantzia bat sortu eta API key-a pasatu
+const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Backend-aren ruta perstonalizatua definitu
-// SE HA CAMBIADO: La ruta ahora es /api/chat en lugar de /api/translate para el chatbot
-app.post('/api/chat', async (req, res) => {
+// Konbertzazioen mezuak gordetzeko bilduma sortu
+let conversations = {};
 
-    // SE HA AÑADIDO: Obtener el mensaje del cuerpo de la petición (simil $input['message'])
-    const { message } = req.body;
+// Backend-aren ruta pertsonalizatua eta eskaria prozesatzeko callback funtzioa definitu
+app.post('/api/chatbot', async (req, res) => {
 
-    // SE HA AÑADIDO: Validación del mensaje (simil if (!trim($message)))
-    if (!message || !message.trim()) {
-        return res.status(400).json({ success: false, error: 'Mezua hutsik dago.' });
+    // jasotako datuak desegituratu
+    const { userMessage, userId } = req.body;
+
+    if (!userMessage) {
+        return res.status(400).json({ error: "Mezuaren testua falta da." });
     }
 
-    // SE HA AÑADIDO: Inicializar el historial en la sesión si no existe (simil if (!isset($_SESSION...)))
-    if (!req.session.txataren_mezuak) {
-        req.session.txataren_mezuak = [];
+    if (!userId) {
+        return res.status(400).json({ error: "Erabiltzailearen identifikadorea falta da." });
     }
 
-    // SE HA AÑADIDO: Añadir mensaje del usuario al historial
-    req.session.txataren_mezuak.push({ role: 'user', content: message });
+    // Erabiltzailearen konbertzazioaren mezuen bilduma existitzen ez bada hasieratu
+    if (!conversations[userId]) {
+        conversations[userId] = [
+            { role: 'system', content: 'Laguntzaile adimenduna zara.' },
+            { role: 'system', content: 'Erantzun labur eta zuzena izan behar du, ahalik eta token gutxien erabiliz'},
+            { role: 'system', content: 'Erantzuna testu hutsean eman, ez erabili markdown formatuan' }
+        ];
+    }
 
-    // SE HA AÑADIDO: Mensaje de sistema (simil $systemMessage)
-    // Nota: El PHP añadía esto en cada petición pero no lo guardaba en sesión. Hacemos lo mismo.
-    const systemMessage = { role: 'system', content: 'Zu laguntzailea zara. Erantzun laburrak eta argiak eman behar dituzu testu formatuan.' };
-    
-    // Construir el array de mensajes para enviar a OpenAI
-    const messages = [systemMessage, ...req.session.txataren_mezuak];
+    // Erabiltzailearen mezua historiara gehitu
+    conversations[userId].push({ role: 'user', content: userMessage });
+
+    // OpenAI-ra bidaltzeko mezuen array-a eraiki
+    const messages = conversations[userId];
 
     // OpenAI-ko modelora eskaera egin (await-ak async-a behar du callback-eko funtzioan)
     try {
         const completion = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo", // Mantenemos el modelo que usaba el script PHP
+            model: "gpt-3.5-turbo",
             messages: messages,
+            max_tokens: 500,
             temperature: 0.7,
+            response_format: { type: "text" }
         });
 
-        // Respuesta del asistente
+        // Laguntzailearen erantzuna
         const botReply = completion.choices[0].message.content;
 
-        // SE HA AÑADIDO: Guardar la respuesta del asistente en el historial de sesión
-        req.session.txataren_mezuak.push({ role: 'assistant', content: botReply });
-
-        // SE HA AÑADIDO: Enviar respuesta al cliente (simil echo json_encode(...))
+        // Laguntzailearen erantzuna historiara gehitu
+        conversations[userId].push({ role: 'assistant', content: botReply });
+        
+        // Erantzuna bezeroari bidali
         return res.status(200).json({ success: true, reply: botReply });
 
     } catch (error) {
         console.log("Error:", error);
-        // Manejo de errores
         if (error.response) {
             return res.status(500).json({ success: false, error: error.response.data.error.message });
         }

@@ -4,11 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesArea = document.getElementById('messagesArea');
     const sendButton = document.getElementById('sendButton');
 
+    // Sortu erabiltzaile ID bat ausaz saio honetarako
+    const userId = 'user_' + Math.random().toString(36).substr(2, 9);
+
     function scrollToBottom() {
         messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
-    // Scroll to bottom on load
+    // Joan behera kargatzean
     scrollToBottom();
 
     function addMessage(content, role) {
@@ -25,29 +28,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = messageInput.value.trim();
         if (!message) return;
 
-        // 1. Mostrar mensaje del usuario
+        // 1. Erabiltzailearen mezua erakutsi
         addMessage(message, 'user');
         
-        // Bloquear input mientras se procesa
+        // Input-a blokeatu prozesatzen den bitartean
         messageInput.value = '';
         messageInput.disabled = true;
         sendButton.disabled = true;
         sendButton.textContent = '...';
 
         try {
-            // 2. Enviar petición al backend (SE HA CAMBIADO: '/app.js' -> '/api/chat')
-            const response = await fetch('/api/chat', {
+            // 2. Eskaera backend-era bidali ('/api/chatbot')
+            const response = await fetch('/api/chatbot', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ message: message })
+                body: JSON.stringify({ userMessage: message, userId: userId })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                // 3. Mostrar respuesta del asistente
+                // 3. Laguntzailearen erantzuna erakutsi
                 addMessage(data.reply, 'assistant');
             } else {
                 addMessage("Errorea: " + (data.error || "Ezin izan da erantzuna jaso."), 'assistant');
@@ -57,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error:', error);
             addMessage("Errorea konexioan.", 'assistant');
         } finally {
-            // Restaurar estado del input
+            // Input-aren egoera leheneratu
             messageInput.disabled = false;
             sendButton.disabled = false;
             sendButton.textContent = 'Bidali';
